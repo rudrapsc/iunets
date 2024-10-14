@@ -812,3 +812,72 @@ class InvertibleChannelMixing3D(OrthogonalChannelMixing):
 
     def inverse(self, x):
         return nn.functional.conv_transpose3d(x, self.kernel)
+
+
+class StandardAdditiveCoupling(nn.Module):
+    """Additive coupling layer, a basic invertible layer.
+
+    By splitting the input activation :math:`x` and output activation :math:`y`
+    into two groups of channels (i.e. :math:`(x_1, x_2) \cong x` and
+    :math:`(y_1, y_2) \cong y`), `additive coupling layers` define an invertible
+    mapping :math:`x \mapsto y` via
+
+    .. math::
+
+       y_1 &= x_2
+
+       y_2 &= x_1 + F(x_2),
+
+    where the `coupling function` :math:`F` is an (almost) arbitrary mapping.
+    :math:`F` just has to map from the space of :math:`x_2` to the space of
+    :math:`x_1`. In practice, this can for instance be a sequence of
+    convolutional layers with batch normalization.
+
+    The inverse of the above mapping is computed algebraically via
+
+    .. math::
+
+       x_1 &= y_2 - F(y_1)
+
+       x_2 &= y_1.
+
+    *Warning*: Note that this is different from the definition of additive
+    coupling layers in ``MemCNN``. Those are equivalent to two consecutive
+    instances of the above-defined additive coupling layers. Hence, the
+    variant implemented here is twice as memory-efficient as the variant from
+    ``MemCNN``.
+
+    :param F:
+        The coupling function of the additive coupling layer, typically a
+        sequence of neural network layers.
+    :param channel_split_pos:
+        The index of the channel at which the input and output activations are
+        split.
+
+    """
+    def __init__(self,
+                 F: nn.Module,
+                 channel_split_pos: int):
+
+        super(AdditiveCoupling, self).__init__()
+        self.F = F
+        self.channel_split_pos = channel_split_pos
+
+    def forward(self, x):
+        x1, x2 = x[:, :self.channel_split_pos], x[:, self.channel_split_pos:]
+        x1, x2 = x1.contiguous(), x2.contiguous()
+        y1 = x2
+        y2 = x1 + self.F.forward(x2)
+        out = torch.cat([y1, y2], dim=1)
+        return out
+
+    def inverse(self, y):
+        # y1, y2 = torch.chunk(y, 2, dim=1)
+        inverse_channel_split_pos = y.shape[1] - self.channel_split_pos
+        y1, y2 = (y[:, :inverse_channel_split_pos],
+                  y[:, inverse_channel_split_pos:])
+        y1, y2 = y1.contiguous(), y2.contiguous()
+        x2 = y1
+        x1 = y2 - self.F.forward(y1)
+        x = torch.cat([x1, x2], dim=1)
+        return x
