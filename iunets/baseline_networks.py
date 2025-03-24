@@ -231,4 +231,4 @@ class StandardUNet(nn.Module):
             if self.skip_connection:
                 x = self.output_layer(x) + input
 
-            return x
+        return x
