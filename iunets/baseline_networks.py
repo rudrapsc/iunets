@@ -228,7 +228,7 @@ class StandardUNet(nn.Module):
             for j in range(depth):
                 x = self.module_R[i][j](x)
 
-            if self.skip_connection:
-                x = self.output_layer(x) + input
+        if self.skip_connection:
+            x = self.output_layer(x) + input
 
         return x
